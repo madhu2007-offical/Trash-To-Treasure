@@ -3,16 +3,24 @@ import { Camera, X, Check, RotateCcw, AlertCircle, RefreshCw, Smartphone, Image 
 import { compressImageFile } from '../utils/imageUtils';
 import './CameraModal.css';
 
+const isMobileDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+};
+
 export default function CameraModal({ isOpen, onClose, onCapture, title = "Capture Scrap Material Photo" }) {
-  const [stream, setStream] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) | 'user' (front)
+  const [facingMode, setFacingMode] = useState(() => isMobileDevice() ? 'environment' : 'user');
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [hasActiveStream, setHasActiveStream] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const streamRef = useRef(null);
   const mobileCameraRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -25,61 +33,104 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
     }).catch(() => {});
   }, []);
 
-  // Stop active stream tracks safely
+  // Stop active stream tracks safely (pure, stable callback with zero dependencies)
   const stopStream = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
+      } catch (e) {
+        console.warn('Error stopping stream tracks:', e);
+      }
+      streamRef.current = null;
     }
-  }, [stream]);
+    setHasActiveStream(false);
+    setIsVideoReady(false);
+  }, []);
 
   // Start Camera Stream
-  const startCamera = useCallback(async (mode = facingMode) => {
+  const startCamera = useCallback(async (modeToUse) => {
     setIsLoading(true);
+    setIsVideoReady(false);
     setCameraError(null);
     stopStream();
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Live camera is not supported on this browser. Use the device camera upload below.');
+      setCameraError('Live webcam requires HTTPS or is not supported on this browser. You can snap using mobile camera or choose from gallery below.');
       setIsLoading(false);
       return;
     }
 
+    const preferredMode = modeToUse || (isMobileDevice() ? 'environment' : 'user');
+
+    let mediaStream = null;
     try {
-      let mediaStream;
       try {
-        // Try requested facing mode first (back camera on mobile)
+        // Attempt 1: Target facing mode with ideal resolution
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: mode,
+            facingMode: { ideal: preferredMode },
             width: { ideal: 1280 },
-            height: { ideal: 960 }
+            height: { ideal: 720 }
           },
           audio: false
         });
-      } catch {
-        // Fallback to any available video stream (e.g. laptop webcam)
+      } catch (firstErr) {
+        console.warn('Initial facingMode webcam attempt failed, falling back to basic video constraint:', firstErr);
+        // Attempt 2: Universal fallback for desktop/laptop webcams
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false
         });
       }
 
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
+      setHasActiveStream(true);
+
+      // Check actual camera facing mode from track settings
+      const track = mediaStream.getVideoTracks()[0];
+      if (track?.getSettings) {
+        const settings = track.getSettings();
+        if (settings.facingMode) {
+          setFacingMode(settings.facingMode);
+        }
+      }
+
+      // Attach stream to video element and trigger play
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-      setIsLoading(false);
-    } catch (err) {
-      console.warn('Camera access error:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCameraError('Camera permission was denied. Please allow camera access in your browser settings or use the system camera below.');
+        const video = videoRef.current;
+        video.srcObject = mediaStream;
+        video.onloadedmetadata = () => {
+          video.play()
+            .then(() => {
+              setIsLoading(false);
+              setIsVideoReady(true);
+            })
+            .catch((playErr) => {
+              console.warn('Video play error:', playErr);
+              setIsLoading(false);
+              setIsVideoReady(true);
+            });
+        };
       } else {
-        setCameraError('Could not start live camera. You can capture a photo using your device camera below.');
+        setIsLoading(false);
       }
+    } catch (err) {
+      console.error('Webcam start error:', err);
       setIsLoading(false);
+      setIsVideoReady(false);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCameraError('Camera permission was denied. Please allow camera access in your browser address bar (click the lock/camera icon) and click Retry, or use mobile camera below.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setCameraError('No webcam hardware was detected on your device. You can choose a photo from your gallery or snap using mobile camera.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setCameraError('Webcam is currently in use by another application (Zoom, Teams, or another tab). Please close it and click Retry.');
+      } else {
+        setCameraError('Could not start live webcam. You can snap using mobile camera or choose from gallery below.');
+      }
     }
-  }, [facingMode, stopStream]);
+  }, [stopStream]);
 
   const handleClose = useCallback(() => {
     stopStream();
@@ -100,14 +151,20 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
     };
   }, [isOpen, startCamera, stopStream]);
 
-  // Keep video ref connected to stream
+  // Keep video ref connected to stream whenever capturedImage is cleared or element mounts
   useEffect(() => {
-    if (videoRef.current && stream && !capturedImage) {
-      videoRef.current.srcObject = stream;
+    if (videoRef.current && streamRef.current && hasActiveStream && !capturedImage) {
+      const video = videoRef.current;
+      if (video.srcObject !== streamRef.current) {
+        video.srcObject = streamRef.current;
+        video.play().then(() => {
+          setIsVideoReady(true);
+        }).catch(() => {});
+      }
     }
-  }, [stream, capturedImage]);
+  }, [hasActiveStream, capturedImage]);
 
-  // Toggle front/back camera on mobile
+  // Toggle front/back camera
   const handleToggleFacingMode = () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
@@ -127,12 +184,13 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
 
   // Snap photo from video frame
   const handleSnapPhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    if (!video || !canvas) return;
 
     const width = video.videoWidth || 1280;
     const height = video.videoHeight || 720;
+    if (width === 0 || height === 0) return;
 
     canvas.width = width;
     canvas.height = height;
@@ -212,10 +270,18 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
                 <button
                   type="button"
                   className="btn btn-primary btn-large camera-fallback-btn"
+                  onClick={() => startCamera()}
+                >
+                  <RefreshCw size={18} />
+                  <span>Retry Webcam</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-large"
                   onClick={() => mobileCameraRef.current?.click()}
                 >
                   <Smartphone size={18} />
-                  <span>Snap with Mobile Camera</span>
+                  <span>Snap with Phone Camera</span>
                 </button>
                 <button
                   type="button"
@@ -244,7 +310,7 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
             </div>
           ) : capturedImage ? (
             <div className="camera-preview-screen">
-              <img src={capturedImage} alt="Captured scrap material" className="camera-captured-img" />
+              <img src={capturedImage} alt="Captured preview" className="camera-captured-img" />
               <div className="camera-preview-tag">
                 <Check size={14} />
                 <span>Photo Captured</span>
@@ -321,7 +387,7 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
                 onClick={handleSnapPhoto}
                 title="Snap photo"
                 aria-label="Take photo"
-                disabled={isLoading}
+                disabled={isLoading || !isVideoReady}
               >
                 <div className="shutter-inner-ring">
                   <div className="shutter-core-circle"></div>
