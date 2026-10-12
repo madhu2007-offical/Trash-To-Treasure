@@ -207,3 +207,51 @@ export async function createOrder(orderData) {
   }
   return orderData;
 }
+
+/**
+ * Real OTP Email Dispatch
+ */
+export async function sendOtpEmail({ email, name, flowType, code }) {
+  try {
+    const res = await fetch(`${API_BASE}/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, flowType, code }),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const errData = await res.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errData.error || 'Server failed to send email'
+    };
+  } catch (err) {
+    console.warn('sendOtpEmail network or timeout error:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Verify OTP on Server
+ */
+export async function verifyRemoteOtp({ email, code }) {
+  try {
+    const res = await fetch(`${API_BASE}/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+      signal: AbortSignal.timeout(6000)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('verifyRemoteOtp network error:', err);
+  }
+  return null;
+}

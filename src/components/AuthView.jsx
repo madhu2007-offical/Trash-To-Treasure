@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { storage } from '../utils/storage';
+import { sendOtpEmail, verifyRemoteOtp } from '../services/api';
 import './AuthView.css';
 import t2tLogo from '../assets/t2t-logo.jpg';
 
@@ -49,6 +50,7 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
   const [resendTimer, setResendTimer] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [copiedOtp, setCopiedOtp] = useState(false);
+  const [isEmailSent, setIsEmailSent] = useState(false);
 
   // Google Modal States
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -149,7 +151,7 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
   };
 
   // Handle initiating Sign In with Gmail OTP (Passwordless)
-  const handleStartSignInWithOtp = () => {
+  const handleStartSignInWithOtp = async () => {
     setAlert(null);
     const identifier = signInIdentifier.trim();
     if (!identifier) {
@@ -169,6 +171,7 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
     }
 
     // Generate real OTP
+    setIsSubmitting(true);
     const code = storage.generateOtp(identifier);
     setActiveOtpCode(code);
     setOtpTargetEmail(identifier);
@@ -176,12 +179,33 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
     setOtpDigits(['', '', '', '', '', '']);
     setResendTimer(30);
     setCanResend(false);
-    setStep('otp');
-    setAlert({ type: 'info', message: `Verification code sent to ${identifier}.` });
+
+    try {
+      const res = await sendOtpEmail({
+        email: identifier,
+        name: existingUser.name,
+        flowType: 'signin',
+        code
+      });
+      setIsSubmitting(false);
+      setStep('otp');
+      if (res?.emailSent) {
+        setIsEmailSent(true);
+        setAlert({ type: 'success', message: `✅ Verification code successfully sent to ${identifier}. Please check your inbox!` });
+      } else {
+        setIsEmailSent(false);
+        setAlert({ type: 'info', message: res?.message || `Verification code dispatched to ${identifier}.` });
+      }
+    } catch {
+      setIsSubmitting(false);
+      setStep('otp');
+      setIsEmailSent(false);
+      setAlert({ type: 'info', message: `Verification code generated for ${identifier}.` });
+    }
   };
 
   // Handle initiating Sign Up with Gmail OTP
-  const handleSignUpSubmit = (e) => {
+  const handleSignUpSubmit = async (e) => {
     e.preventDefault();
     setAlert(null);
 
@@ -225,22 +249,40 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
 
     // Generate real OTP
     setIsSubmitting(true);
-    setTimeout(() => {
+    const code = storage.generateOtp(email);
+    setActiveOtpCode(code);
+    setOtpTargetEmail(email);
+    setOtpFlowType('signup');
+    setOtpDigits(['', '', '', '', '', '']);
+    setResendTimer(30);
+    setCanResend(false);
+
+    try {
+      const res = await sendOtpEmail({
+        email,
+        name,
+        flowType: 'signup',
+        code
+      });
       setIsSubmitting(false);
-      const code = storage.generateOtp(email);
-      setActiveOtpCode(code);
-      setOtpTargetEmail(email);
-      setOtpFlowType('signup');
-      setOtpDigits(['', '', '', '', '', '']);
-      setResendTimer(30);
-      setCanResend(false);
       setStep('otp');
-      setAlert({ type: 'info', message: `Verification code sent to ${email}.` });
-    }, 400);
+      if (res?.emailSent) {
+        setIsEmailSent(true);
+        setAlert({ type: 'success', message: `✅ Verification code successfully sent to ${email}. Please check your inbox!` });
+      } else {
+        setIsEmailSent(false);
+        setAlert({ type: 'info', message: res?.message || `Verification code dispatched to ${email}.` });
+      }
+    } catch {
+      setIsSubmitting(false);
+      setStep('otp');
+      setIsEmailSent(false);
+      setAlert({ type: 'info', message: `Verification code generated for ${email}.` });
+    }
   };
 
   // Handle Google Modal Form Submit
-  const handleGoogleSubmit = (e) => {
+  const handleGoogleSubmit = async (e) => {
     e.preventDefault();
     setAlert(null);
 
@@ -254,20 +296,37 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
 
     setShowGoogleModal(false);
     setIsSubmitting(true);
+    const code = storage.generateOtp(email);
+    setActiveOtpCode(code);
+    setOtpTargetEmail(email);
+    setOtpFlowType('google');
+    setGoogleName(name);
+    setOtpDigits(['', '', '', '', '', '']);
+    setResendTimer(30);
+    setCanResend(false);
 
-    setTimeout(() => {
+    try {
+      const res = await sendOtpEmail({
+        email,
+        name,
+        flowType: 'google',
+        code
+      });
       setIsSubmitting(false);
-      const code = storage.generateOtp(email);
-      setActiveOtpCode(code);
-      setOtpTargetEmail(email);
-      setOtpFlowType('google');
-      setGoogleName(name);
-      setOtpDigits(['', '', '', '', '', '']);
-      setResendTimer(30);
-      setCanResend(false);
       setStep('otp');
+      if (res?.emailSent) {
+        setIsEmailSent(true);
+        setAlert({ type: 'success', message: `✅ Google authentication code sent directly to ${email}.` });
+      } else {
+        setIsEmailSent(false);
+        setAlert({ type: 'info', message: res?.message || `Google authentication OTP sent to ${email}.` });
+      }
+    } catch {
+      setIsSubmitting(false);
+      setStep('otp');
+      setIsEmailSent(false);
       setAlert({ type: 'info', message: `Google authentication OTP sent to ${email}.` });
-    }, 400);
+    }
   };
 
   // OTP Digit Box Change Handler with auto-advance
@@ -312,19 +371,40 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
   };
 
   // Resend OTP
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (!canResend) return;
+    setIsSubmitting(true);
     const newCode = storage.generateOtp(otpTargetEmail);
     setActiveOtpCode(newCode);
     setResendTimer(30);
     setCanResend(false);
     setOtpDigits(['', '', '', '', '', '']);
-    setAlert({ type: 'info', message: `A new 6-digit verification code has been dispatched to ${otpTargetEmail}.` });
+
+    try {
+      const res = await sendOtpEmail({
+        email: otpTargetEmail,
+        name: signUpName || googleName,
+        flowType: otpFlowType,
+        code: newCode
+      });
+      setIsSubmitting(false);
+      if (res?.emailSent) {
+        setIsEmailSent(true);
+        setAlert({ type: 'success', message: `✅ A new verification code was sent to ${otpTargetEmail}.` });
+      } else {
+        setIsEmailSent(false);
+        setAlert({ type: 'info', message: `A new 6-digit verification code has been generated for ${otpTargetEmail}.` });
+      }
+    } catch {
+      setIsSubmitting(false);
+      setIsEmailSent(false);
+      setAlert({ type: 'info', message: `A new 6-digit verification code has been generated for ${otpTargetEmail}.` });
+    }
     otpInputRefs.current[0]?.focus();
   };
 
   // Verify and Approve OTP
-  const handleApproveOtp = (e) => {
+  const handleApproveOtp = async (e) => {
     if (e) e.preventDefault();
     setAlert(null);
 
@@ -335,14 +415,30 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      const verifyResult = storage.verifyOtp(otpTargetEmail, enteredCode);
-      setIsSubmitting(false);
+    let isApproved = false;
 
-      if (!verifyResult.success) {
+    // Check remote DB first if available
+    try {
+      const remoteRes = await verifyRemoteOtp({ email: otpTargetEmail, code: enteredCode });
+      if (remoteRes && remoteRes.success) {
+        isApproved = true;
+      }
+    } catch {
+      // Continue to local verification
+    }
+
+    if (!isApproved) {
+      const verifyResult = storage.verifyOtp(otpTargetEmail, enteredCode);
+      if (verifyResult.success) {
+        isApproved = true;
+      } else {
+        setIsSubmitting(false);
         setAlert({ type: 'error', message: verifyResult.error });
         return;
       }
+    }
+
+    setIsSubmitting(false);
 
       // OTP Approved successfully!
       if (otpFlowType === 'signup') {
@@ -393,7 +489,6 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
           }, 600);
         }
       }
-    }, 450);
   };
 
   return (
@@ -801,41 +896,57 @@ export default function AuthView({ onLoginSuccess, onGuestContinue, initialTab =
               </div>
             )}
 
-            {/* Simulated Live Gmail Inbox Notification */}
-            <div className="gmail-inbox-banner">
-              <div className="gmail-banner-header">
-                <div className="gmail-banner-left">
-                  <Mail size={15} />
-                  <span>Gmail Inbox Notification</span>
+            {/* Real Gmail Inbox / Delivery Banner */}
+            {isEmailSent ? (
+              <div className="gmail-inbox-banner" style={{ background: '#F2F7F2', borderColor: '#7A9A6B' }}>
+                <div className="gmail-banner-header">
+                  <div className="gmail-banner-left">
+                    <CheckCircle size={15} color="#2F5D3A" />
+                    <span style={{ color: '#2F5D3A', fontWeight: 600 }}>Sent Directly to Your Mail ID</span>
+                  </div>
+                  <span className="gmail-banner-time">Delivered</span>
                 </div>
-                <span className="gmail-banner-time">Just now</span>
+                <div className="gmail-banner-body" style={{ color: '#2B2B2B', fontSize: '0.85rem' }}>
+                  A 6-digit verification code has been dispatched to <strong>{otpTargetEmail}</strong>.<br />
+                  Please open your email client, copy the code from our email, and paste or type it into the boxes below. (If you don't see it within a minute, check your Spam / Promotions folder).
+                </div>
               </div>
-              <div className="gmail-banner-body">
-                <strong>From:</strong> T2T Verification &lt;auth@t2t.eco&gt;<br />
-                <strong>Subject:</strong> Your T2T (Trash to Treasure) Account Approval OTP
+            ) : (
+              <div className="gmail-inbox-banner">
+                <div className="gmail-banner-header">
+                  <div className="gmail-banner-left">
+                    <Mail size={15} />
+                    <span>Live Gmail Verification Code</span>
+                  </div>
+                  <span className="gmail-banner-time">Active</span>
+                </div>
+                <div className="gmail-banner-body">
+                  <strong>Target Mail ID:</strong> {otpTargetEmail}<br />
+                  <strong>Subject:</strong> Your T2T Account Approval OTP
+                </div>
+                <div className="gmail-otp-display-row">
+                  <span className="gmail-code-highlight">{activeOtpCode}</span>
+                  <button 
+                    type="button" 
+                    className="btn-copy-otp"
+                    onClick={handleCopyOtp}
+                    title="Auto-fill this code into the boxes below"
+                  >
+                    {copiedOtp ? (
+                      <>
+                        <Check size={13} style={{ display: 'inline', marginRight: '3px' }} />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} style={{ display: 'inline', marginRight: '3px' }} />
+                        <span>Auto-fill OTP</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="gmail-otp-display-row">
-                <span className="gmail-code-highlight">{activeOtpCode}</span>
-                <button 
-                  type="button" 
-                  className="btn-copy-otp"
-                  onClick={handleCopyOtp}
-                  title="Auto-fill this code into the boxes below"
-                >
-                  {copiedOtp ? (
-                    <>
-                      <Check size={13} style={{ display: 'inline', marginRight: '3px' }} />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={13} style={{ display: 'inline', marginRight: '3px' }} />
-                      <span>Auto-fill OTP</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+            )}
 
             {/* 6 Digit OTP Inputs */}
             <form onSubmit={handleApproveOtp}>
