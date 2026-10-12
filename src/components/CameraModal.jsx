@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, X, Check, RotateCcw, AlertCircle, RefreshCw } from 'lucide-react';
+import { Camera, X, Check, RotateCcw, AlertCircle, RefreshCw, Smartphone, Image as ImageIcon } from 'lucide-react';
+import { compressImageFile } from '../utils/imageUtils';
 import './CameraModal.css';
 
 export default function CameraModal({ isOpen, onClose, onCapture, title = "Capture Scrap Material Photo" }) {
@@ -12,7 +13,8 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const fileFallbackRef = useRef(null);
+  const mobileCameraRef = useRef(null);
+  const galleryRef = useRef(null);
 
   // Check available cameras
   useEffect(() => {
@@ -162,15 +164,19 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
   };
 
   // Fallback file input change
-  const handleFallbackFileChange = (e) => {
+  const handleFallbackFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      onCapture(reader.result);
-      handleClose();
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFile(file);
+      if (compressed) {
+        onCapture(compressed);
+        handleClose();
+      }
+    } catch (err) {
+      console.warn('File processing error:', err);
+    }
+    e.target.value = '';
   };
 
   if (!isOpen) return null;
@@ -202,19 +208,36 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
             <div className="camera-error-screen">
               <AlertCircle size={40} className="camera-error-icon" />
               <p>{cameraError}</p>
-              <button
-                type="button"
-                className="btn btn-primary btn-large camera-fallback-btn"
-                onClick={() => fileFallbackRef.current?.click()}
-              >
-                <Camera size={18} />
-                <span>Snap with Device Camera</span>
-              </button>
+              <div className="camera-fallback-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-large camera-fallback-btn"
+                  onClick={() => mobileCameraRef.current?.click()}
+                >
+                  <Smartphone size={18} />
+                  <span>Snap with Mobile Camera</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-large"
+                  onClick={() => galleryRef.current?.click()}
+                >
+                  <ImageIcon size={18} />
+                  <span>Choose from Gallery</span>
+                </button>
+              </div>
               <input
-                ref={fileFallbackRef}
+                ref={mobileCameraRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
+                onChange={handleFallbackFileChange}
+                style={{ display: 'none' }}
+              />
+              <input
+                ref={galleryRef}
+                type="file"
+                accept="image/*"
                 onChange={handleFallbackFileChange}
                 style={{ display: 'none' }}
               />
@@ -305,20 +328,39 @@ export default function CameraModal({ isOpen, onClose, onCapture, title = "Captu
                 </div>
               </button>
 
-              <button
-                type="button"
-                className="btn btn-secondary camera-file-fallback-btn"
-                onClick={() => fileFallbackRef.current?.click()}
-                title="Or choose photo from device"
-              >
-                <span>Device files</span>
-              </button>
+              <div className="camera-extra-options">
+                <button
+                  type="button"
+                  className="btn btn-secondary camera-file-fallback-btn"
+                  onClick={() => mobileCameraRef.current?.click()}
+                  title="Open phone camera directly"
+                >
+                  <Smartphone size={15} />
+                  <span>Phone Camera</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary camera-file-fallback-btn"
+                  onClick={() => galleryRef.current?.click()}
+                  title="Choose from photo gallery"
+                >
+                  <ImageIcon size={15} />
+                  <span>Gallery</span>
+                </button>
+              </div>
 
               <input
-                ref={fileFallbackRef}
+                ref={mobileCameraRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
+                onChange={handleFallbackFileChange}
+                style={{ display: 'none' }}
+              />
+              <input
+                ref={galleryRef}
+                type="file"
+                accept="image/*"
                 onChange={handleFallbackFileChange}
                 style={{ display: 'none' }}
               />

@@ -26,13 +26,15 @@ import {
   Upload,
   X,
   Check,
-  Sparkles
+  Sparkles,
+  Video
 } from 'lucide-react';
 import './App.css';
 import AuthView from './components/AuthView';
 import t2tLogo from './assets/t2t-logo.jpg';
 import SplashScreen from './components/SplashScreen';
 import CameraModal from './components/CameraModal';
+import { compressImageFile } from './utils/imageUtils';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=800&h=600&fit=crop&q=80';
 
@@ -114,6 +116,15 @@ function App() {
       setNewPost(prev => ({ ...prev, mediaUrl: dataUrl }));
     } else if (cameraModalConfig.target === 'reviewImage') {
       setReviewImage(dataUrl);
+    } else if (cameraModalConfig.target?.startsWith('diaryEntry_')) {
+      const idx = parseInt(cameraModalConfig.target.split('_')[1], 10);
+      setNewPost(prev => {
+        const updated = [...prev.diaryEntries];
+        if (updated[idx]) {
+          updated[idx].media = dataUrl;
+        }
+        return { ...prev, diaryEntries: updated };
+      });
     }
   };
 
@@ -338,32 +349,32 @@ function App() {
     setEditOrderImage('');
   };
 
-  const handleOrderImageFileUpload = (e) => {
+  const handleOrderImageFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Photo is larger than 5MB. Please choose a smaller file.');
-      return;
+    try {
+      const compressed = await compressImageFile(file);
+      if (compressed) {
+        setEditOrderImage(compressed);
+      }
+    } catch (err) {
+      console.warn('Error reading mobile camera photo:', err);
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setEditOrderImage(reader.result);
-    };
-    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const handleCheckoutImageFileUpload = (e) => {
+  const handleCheckoutImageFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Photo is larger than 5MB. Please choose a smaller file.');
-      return;
+    try {
+      const compressed = await compressImageFile(file);
+      if (compressed) {
+        setCheckoutImage(compressed);
+      }
+    } catch (err) {
+      console.warn('Error reading mobile camera photo:', err);
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setCheckoutImage(reader.result);
-    };
-    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleSaveOrderUpdate = (e, orderId) => {
@@ -1291,22 +1302,21 @@ function App() {
                           <label>Attach Scrap Material or Reference Photo</label>
                           <div className="order-photo-uploader-box">
                             <div className="order-photo-actions-row">
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-camera-trigger"
-                                onClick={() => setCameraModalConfig({
-                                  isOpen: true,
-                                  target: 'checkout',
-                                  title: 'Capture Scrap Material Photo'
-                                })}
-                              >
+                              <label className="btn btn-primary btn-camera-trigger file-input-label" title="Snap photo using mobile camera">
                                 <Camera size={16} />
-                                <span>Take Photo (Camera)</span>
-                              </button>
+                                <span>Mobile Camera</span>
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  capture="environment" 
+                                  onChange={handleCheckoutImageFileUpload} 
+                                  style={{ display: 'none' }}
+                                />
+                              </label>
 
-                              <label className="btn btn-secondary file-input-label">
+                              <label className="btn btn-secondary file-input-label" title="Upload from photo album or files">
                                 <Upload size={16} />
-                                <span>Upload from Device</span>
+                                <span>Choose from Gallery</span>
                                 <input 
                                   type="file" 
                                   accept="image/*" 
@@ -1314,6 +1324,20 @@ function App() {
                                   style={{ display: 'none' }}
                                 />
                               </label>
+
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-small live-webcam-btn"
+                                onClick={() => setCameraModalConfig({
+                                  isOpen: true,
+                                  target: 'checkout',
+                                  title: 'Capture Scrap Material Photo'
+                                })}
+                                title="Open live webcam viewfinder (laptop/desktop)"
+                              >
+                                <Video size={14} />
+                                <span>Live Webcam</span>
+                              </button>
                             </div>
 
                             {checkoutImage && (
@@ -1327,18 +1351,17 @@ function App() {
                                 <div className="order-photo-preview-info">
                                   <span className="preview-label"><Check size={13} /> Photo attached to order</span>
                                   <div className="preview-action-btns">
-                                    <button 
-                                      type="button" 
-                                      className="btn-text btn-small retake-photo-btn"
-                                      onClick={() => setCameraModalConfig({
-                                        isOpen: true,
-                                        target: 'checkout',
-                                        title: 'Retake Scrap Material Photo'
-                                      })}
-                                    >
+                                    <label className="btn-text btn-small retake-photo-btn file-input-label" title="Retake with mobile camera">
                                       <Camera size={13} />
-                                      <span>Retake</span>
-                                    </button>
+                                      <span>Retake Camera</span>
+                                      <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        capture="environment" 
+                                        onChange={handleCheckoutImageFileUpload} 
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
                                     <button 
                                       type="button" 
                                       className="btn-text btn-small remove-photo-btn"
@@ -1547,22 +1570,21 @@ function App() {
                                 <label>Attached Photo (Scrap Material / Design Reference)</label>
                                 <div className="order-photo-uploader-box">
                                   <div className="order-photo-actions-row">
-                                    <button
-                                      type="button"
-                                      className="btn btn-primary btn-camera-trigger"
-                                      onClick={() => setCameraModalConfig({
-                                        isOpen: true,
-                                        target: 'orderEdit',
-                                        title: `Take Photo for Order #${order.id.split('_')[1]}`
-                                      })}
-                                    >
+                                    <label className="btn btn-primary btn-camera-trigger file-input-label" title="Snap photo using mobile camera">
                                       <Camera size={16} />
-                                      <span>Take Photo (Camera)</span>
-                                    </button>
+                                      <span>Mobile Camera</span>
+                                      <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        capture="environment" 
+                                        onChange={handleOrderImageFileUpload} 
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
 
-                                    <label className="btn btn-secondary file-input-label">
+                                    <label className="btn btn-secondary file-input-label" title="Upload from photo album or files">
                                       <Upload size={16} />
-                                      <span>Upload from Device</span>
+                                      <span>Choose from Gallery</span>
                                       <input 
                                         type="file" 
                                         accept="image/*" 
@@ -1570,6 +1592,20 @@ function App() {
                                         style={{ display: 'none' }}
                                       />
                                     </label>
+
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-small live-webcam-btn"
+                                      onClick={() => setCameraModalConfig({
+                                        isOpen: true,
+                                        target: 'orderEdit',
+                                        title: `Take Photo for Order #${order.id.split('_')[1]}`
+                                      })}
+                                      title="Open live webcam viewfinder (laptop/desktop)"
+                                    >
+                                      <Video size={14} />
+                                      <span>Live Webcam</span>
+                                    </button>
                                   </div>
 
                                   {editOrderImage && (
@@ -1583,18 +1619,17 @@ function App() {
                                       <div className="order-photo-preview-info">
                                         <span className="preview-label"><Check size={13} /> Photo ready to attach</span>
                                         <div className="preview-action-btns">
-                                          <button
-                                            type="button"
-                                            className="btn-text btn-small retake-photo-btn"
-                                            onClick={() => setCameraModalConfig({
-                                              isOpen: true,
-                                              target: 'orderEdit',
-                                              title: `Retake Photo for Order #${order.id.split('_')[1]}`
-                                            })}
-                                          >
+                                          <label className="btn-text btn-small retake-photo-btn file-input-label" title="Retake with mobile camera">
                                             <Camera size={13} />
-                                            <span>Retake</span>
-                                          </button>
+                                            <span>Retake Camera</span>
+                                            <input 
+                                              type="file" 
+                                              accept="image/*" 
+                                              capture="environment" 
+                                              onChange={handleOrderImageFileUpload} 
+                                              style={{ display: 'none' }}
+                                            />
+                                          </label>
                                           <button 
                                             type="button" 
                                             className="btn-text btn-small remove-photo-btn"
@@ -1656,34 +1691,54 @@ function App() {
                               <div className="form-group">
                                 <label>Snapshot of Received Treasure (Optional)</label>
                                 <div className="order-photo-actions-row">
+                                  <label className="btn btn-secondary btn-small file-input-label" title="Snap photo of piece with mobile camera">
+                                    <Camera size={14} />
+                                    <span>Mobile Camera</span>
+                                    <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      capture="environment" 
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const compressed = await compressImageFile(file);
+                                        if (compressed) setReviewImage(compressed);
+                                        e.target.value = '';
+                                      }} 
+                                      style={{ display: 'none' }}
+                                    />
+                                  </label>
+
+                                  <label className="btn btn-secondary btn-small file-input-label" title="Upload from photo album">
+                                    <Upload size={14} />
+                                    <span>From Gallery</span>
+                                    <input 
+                                      type="file" 
+                                      accept="image/*" 
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const compressed = await compressImageFile(file);
+                                        if (compressed) setReviewImage(compressed);
+                                        e.target.value = '';
+                                      }} 
+                                      style={{ display: 'none' }}
+                                    />
+                                  </label>
+
                                   <button
                                     type="button"
-                                    className="btn btn-secondary btn-small"
+                                    className="btn btn-secondary btn-small live-webcam-btn"
                                     onClick={() => setCameraModalConfig({
                                       isOpen: true,
                                       target: 'reviewImage',
                                       title: 'Snap Photo of Your Received Piece'
                                     })}
+                                    title="Open live webcam viewfinder"
                                   >
-                                    <Camera size={14} />
-                                    <span>Take Photo (Camera)</span>
+                                    <Video size={13} />
+                                    <span>Webcam</span>
                                   </button>
-                                  <label className="btn btn-secondary btn-small file-input-label">
-                                    <Upload size={14} />
-                                    <span>Upload Photo</span>
-                                    <input 
-                                      type="file" 
-                                      accept="image/*" 
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (!file) return;
-                                        const reader = new FileReader();
-                                        reader.onloadend = () => setReviewImage(reader.result);
-                                        reader.readAsDataURL(file);
-                                      }} 
-                                      style={{ display: 'none' }}
-                                    />
-                                  </label>
                                 </div>
 
                                 {reviewImage && (
@@ -1692,18 +1747,23 @@ function App() {
                                     <div className="order-photo-preview-info">
                                       <span className="preview-label"><Check size={13} /> Photo attached</span>
                                       <div className="preview-action-btns">
-                                        <button
-                                          type="button"
-                                          className="btn-text btn-small retake-photo-btn"
-                                          onClick={() => setCameraModalConfig({
-                                            isOpen: true,
-                                            target: 'reviewImage',
-                                            title: 'Retake Photo of Your Received Piece'
-                                          })}
-                                        >
+                                        <label className="btn-text btn-small retake-photo-btn file-input-label" title="Retake with mobile camera">
                                           <Camera size={13} />
-                                          <span>Retake</span>
-                                        </button>
+                                          <span>Retake Camera</span>
+                                          <input 
+                                            type="file" 
+                                            accept="image/*" 
+                                            capture="environment" 
+                                            onChange={async (e) => {
+                                              const file = e.target.files?.[0];
+                                              if (!file) return;
+                                              const compressed = await compressImageFile(file);
+                                              if (compressed) setReviewImage(compressed);
+                                              e.target.value = '';
+                                            }} 
+                                            style={{ display: 'none' }}
+                                          />
+                                        </label>
                                         <button 
                                           type="button" 
                                           className="btn-text btn-small remove-photo-btn"
@@ -2009,9 +2069,42 @@ function App() {
 
                     <div className="grid grid-cols-2 gap-md">
                       <div className="form-group">
-                        <label>Primary Craft Photo (Camera / Upload / URL)</label>
+                        <label>Primary Craft Photo (Camera / Upload)</label>
                         <div className="product-image-input-lockup">
                           <div className="order-photo-actions-row" style={{ marginBottom: '0.4rem' }}>
+                            <label className="btn btn-secondary btn-small file-input-label" title="Snap photo using mobile camera">
+                              <Camera size={14} />
+                              <span>Camera</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                capture="environment" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const compressed = await compressImageFile(file);
+                                  if (compressed) setNewProduct(prev => ({ ...prev, image1: compressed }));
+                                  e.target.value = '';
+                                }} 
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+                            <label className="btn btn-secondary btn-small file-input-label" title="Upload from files/gallery">
+                              <Upload size={14} />
+                              <span>Upload</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const compressed = await compressImageFile(file);
+                                  if (compressed) setNewProduct(prev => ({ ...prev, image1: compressed }));
+                                  e.target.value = '';
+                                }} 
+                                style={{ display: 'none' }}
+                              />
+                            </label>
                             <button
                               type="button"
                               className="btn btn-secondary btn-small"
@@ -2020,33 +2113,12 @@ function App() {
                                 target: 'productImage1',
                                 title: 'Capture Primary Product Photo'
                               })}
+                              title="Open live webcam viewfinder"
                             >
-                              <Camera size={14} />
-                              <span>Camera</span>
+                              <Video size={13} />
+                              <span>Webcam</span>
                             </button>
-                            <label className="btn btn-secondary btn-small file-input-label">
-                              <Upload size={14} />
-                              <span>Upload</span>
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => setNewProduct(prev => ({ ...prev, image1: reader.result }));
-                                  reader.readAsDataURL(file);
-                                }} 
-                                style={{ display: 'none' }}
-                              />
-                            </label>
                           </div>
-                          <input 
-                            type="text" 
-                            placeholder="Use Camera / Upload above or enter image URL..."
-                            value={newProduct.image1}
-                            onChange={(e) => setNewProduct({...newProduct, image1: e.target.value})}
-                          />
                           {newProduct.image1 && (
                             <div className="order-photo-preview-card" style={{ marginTop: '0.4rem' }}>
                               <img src={newProduct.image1} alt="Primary preview" className="order-photo-preview-img" onError={handleImageError} />
@@ -2063,9 +2135,42 @@ function App() {
                       </div>
 
                       <div className="form-group">
-                        <label>Secondary Craft Photo (Camera / Upload / URL)</label>
+                        <label>Secondary Craft Photo (Camera / Upload)</label>
                         <div className="product-image-input-lockup">
                           <div className="order-photo-actions-row" style={{ marginBottom: '0.4rem' }}>
+                            <label className="btn btn-secondary btn-small file-input-label" title="Snap photo using mobile camera">
+                              <Camera size={14} />
+                              <span>Camera</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                capture="environment" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const compressed = await compressImageFile(file);
+                                  if (compressed) setNewProduct(prev => ({ ...prev, image2: compressed }));
+                                  e.target.value = '';
+                                }} 
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+                            <label className="btn btn-secondary btn-small file-input-label" title="Upload from files/gallery">
+                              <Upload size={14} />
+                              <span>Upload</span>
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const compressed = await compressImageFile(file);
+                                  if (compressed) setNewProduct(prev => ({ ...prev, image2: compressed }));
+                                  e.target.value = '';
+                                }} 
+                                style={{ display: 'none' }}
+                              />
+                            </label>
                             <button
                               type="button"
                               className="btn btn-secondary btn-small"
@@ -2074,33 +2179,12 @@ function App() {
                                 target: 'productImage2',
                                 title: 'Capture Secondary Product Photo'
                               })}
+                              title="Open live webcam viewfinder"
                             >
-                              <Camera size={14} />
-                              <span>Camera</span>
+                              <Video size={13} />
+                              <span>Webcam</span>
                             </button>
-                            <label className="btn btn-secondary btn-small file-input-label">
-                              <Upload size={14} />
-                              <span>Upload</span>
-                              <input 
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => setNewProduct(prev => ({ ...prev, image2: reader.result }));
-                                  reader.readAsDataURL(file);
-                                }} 
-                                style={{ display: 'none' }}
-                              />
-                            </label>
                           </div>
-                          <input 
-                            type="text" 
-                            placeholder="Use Camera / Upload above or enter image URL..."
-                            value={newProduct.image2}
-                            onChange={(e) => setNewProduct({...newProduct, image2: e.target.value})}
-                          />
                           {newProduct.image2 && (
                             <div className="order-photo-preview-card" style={{ marginTop: '0.4rem' }}>
                               <img src={newProduct.image2} alt="Secondary preview" className="order-photo-preview-img" onError={handleImageError} />
@@ -2165,9 +2249,42 @@ function App() {
                     </div>
 
                     <div className="form-group">
-                      <label>Story Cover Photo (Camera / Upload / Link)</label>
+                      <label>Story Cover Photo (Camera / Upload)</label>
                       <div className="product-image-input-lockup">
                         <div className="order-photo-actions-row" style={{ marginBottom: '0.4rem' }}>
+                          <label className="btn btn-secondary btn-small file-input-label" title="Snap photo using mobile camera">
+                            <Camera size={14} />
+                            <span>Camera</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              capture="environment" 
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const compressed = await compressImageFile(file);
+                                if (compressed) setNewPost(prev => ({ ...prev, mediaUrl: compressed }));
+                                e.target.value = '';
+                              }} 
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+                          <label className="btn btn-secondary btn-small file-input-label" title="Upload from files/gallery">
+                            <Upload size={14} />
+                            <span>Upload</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const compressed = await compressImageFile(file);
+                                if (compressed) setNewPost(prev => ({ ...prev, mediaUrl: compressed }));
+                                e.target.value = '';
+                              }} 
+                              style={{ display: 'none' }}
+                            />
+                          </label>
                           <button
                             type="button"
                             className="btn btn-secondary btn-small"
@@ -2176,33 +2293,12 @@ function App() {
                               target: 'postMedia',
                               title: 'Capture Story Cover Photo'
                             })}
+                            title="Open live webcam viewfinder"
                           >
-                            <Camera size={14} />
-                            <span>Camera</span>
+                            <Video size={13} />
+                            <span>Webcam</span>
                           </button>
-                          <label className="btn btn-secondary btn-small file-input-label">
-                            <Upload size={14} />
-                            <span>Upload</span>
-                            <input 
-                              type="file" 
-                              accept="image/*" 
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                const reader = new FileReader();
-                                reader.onloadend = () => setNewPost(prev => ({ ...prev, mediaUrl: reader.result }));
-                                reader.readAsDataURL(file);
-                              }} 
-                              style={{ display: 'none' }}
-                            />
-                          </label>
                         </div>
-                        <input 
-                          type="text" 
-                          placeholder="Use Camera / Upload above or enter link..."
-                          value={newPost.mediaUrl}
-                          onChange={(e) => setNewPost({...newPost, mediaUrl: e.target.value})}
-                        />
                         {newPost.mediaUrl && (
                           <div className="order-photo-preview-card" style={{ marginTop: '0.4rem' }}>
                             <img src={newPost.mediaUrl} alt="Story cover preview" className="order-photo-preview-img" onError={handleImageError} />
@@ -2263,17 +2359,85 @@ function App() {
                                 />
                               </div>
                               <div className="form-group">
-                                <label>Day Image URL</label>
-                                <input 
-                                  type="url" 
-                                  placeholder="Unsplash image URL..."
-                                  value={entry.media}
-                                  onChange={(e) => {
-                                    const updated = [...newPost.diaryEntries];
-                                    updated[index].media = e.target.value;
-                                    setNewPost({...newPost, diaryEntries: updated});
-                                  }}
-                                />
+                                <label>Day Photo (Camera / Upload)</label>
+                                <div className="product-image-input-lockup">
+                                  <div className="order-photo-actions-row" style={{ marginBottom: '0.4rem' }}>
+                                    <label className="btn btn-secondary btn-small file-input-label" title="Snap photo using mobile camera">
+                                      <Camera size={14} />
+                                      <span>Camera</span>
+                                      <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        capture="environment" 
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          const compressed = await compressImageFile(file);
+                                          if (compressed) {
+                                            const updated = [...newPost.diaryEntries];
+                                            updated[index].media = compressed;
+                                            setNewPost({...newPost, diaryEntries: updated});
+                                          }
+                                          e.target.value = '';
+                                        }} 
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
+                                    <label className="btn btn-secondary btn-small file-input-label" title="Upload from files/gallery">
+                                      <Upload size={14} />
+                                      <span>Upload</span>
+                                      <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          const compressed = await compressImageFile(file);
+                                          if (compressed) {
+                                            const updated = [...newPost.diaryEntries];
+                                            updated[index].media = compressed;
+                                            setNewPost({...newPost, diaryEntries: updated});
+                                          }
+                                          e.target.value = '';
+                                        }} 
+                                        style={{ display: 'none' }}
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary btn-small"
+                                      onClick={() => setCameraModalConfig({
+                                        isOpen: true,
+                                        target: `diaryEntry_${index}`,
+                                        title: `Capture Day ${entry.dayNumber} Photo`
+                                      })}
+                                      title="Open live webcam viewfinder"
+                                    >
+                                      <Video size={13} />
+                                      <span>Webcam</span>
+                                    </button>
+                                  </div>
+                                  {entry.media && (
+                                    <div className="order-photo-preview-card" style={{ marginTop: '0.4rem' }}>
+                                      <img src={entry.media} alt={`Day ${entry.dayNumber} preview`} className="order-photo-preview-img" onError={handleImageError} />
+                                      <div className="order-photo-preview-info">
+                                        <span className="preview-label"><Check size={13} /> Day photo ready</span>
+                                        <button 
+                                          type="button" 
+                                          className="btn-text btn-small remove-photo-btn"
+                                          onClick={() => {
+                                            const updated = [...newPost.diaryEntries];
+                                            updated[index].media = '';
+                                            setNewPost({...newPost, diaryEntries: updated});
+                                          }}
+                                        >
+                                          <X size={13} />
+                                          <span>Remove</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <div className="form-group">
