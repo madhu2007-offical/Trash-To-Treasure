@@ -5,6 +5,18 @@ import {
   INITIAL_ORDERS, 
   INITIAL_REVIEWS 
 } from '../data/mockData';
+import {
+  createProduct as apiCreateProduct,
+  saveArtisan as apiSaveArtisan,
+  createPost as apiCreatePost,
+  createOrder as apiCreateOrder,
+  likePost as apiLikePost,
+  addCommentToPost as apiAddCommentToPost,
+  fetchProducts as apiFetchProducts,
+  fetchArtisans as apiFetchArtisans,
+  fetchPosts as apiFetchPosts,
+  fetchOrders as apiFetchOrders
+} from '../services/api';
 
 const KEYS = {
   ARTISANS: 't2t_artisans',
@@ -186,6 +198,7 @@ export const storage = {
       artisans.push(artisan);
     }
     set(KEYS.ARTISANS, artisans);
+    apiSaveArtisan(artisan).catch(() => {});
     return artisan;
   },
 
@@ -199,6 +212,7 @@ export const storage = {
       products.push(product);
     }
     set(KEYS.PRODUCTS, products);
+    apiCreateProduct(product).catch(() => {});
     return product;
   },
 
@@ -212,6 +226,7 @@ export const storage = {
       posts.unshift(post); // New posts first
     }
     set(KEYS.POSTS, posts);
+    apiCreatePost(post).catch(() => {});
     return post;
   },
 
@@ -225,7 +240,35 @@ export const storage = {
       orders.unshift(order);
     }
     set(KEYS.ORDERS, orders);
+    apiCreateOrder(order).catch(() => {});
     return order;
+  },
+
+  syncWithServer: async () => {
+    try {
+      const [remoteProducts, remoteArtisans, remotePosts, remoteOrders] = await Promise.allSettled([
+        apiFetchProducts(),
+        apiFetchArtisans(),
+        apiFetchPosts(),
+        apiFetchOrders()
+      ]);
+      if (remoteProducts.status === 'fulfilled' && Array.isArray(remoteProducts.value) && remoteProducts.value.length > 0) {
+        set(KEYS.PRODUCTS, remoteProducts.value);
+      }
+      if (remoteArtisans.status === 'fulfilled' && Array.isArray(remoteArtisans.value) && remoteArtisans.value.length > 0) {
+        set(KEYS.ARTISANS, remoteArtisans.value);
+      }
+      if (remotePosts.status === 'fulfilled' && Array.isArray(remotePosts.value) && remotePosts.value.length > 0) {
+        set(KEYS.POSTS, remotePosts.value);
+      }
+      if (remoteOrders.status === 'fulfilled' && Array.isArray(remoteOrders.value) && remoteOrders.value.length > 0) {
+        set(KEYS.ORDERS, remoteOrders.value);
+      }
+      return true;
+    } catch (e) {
+      console.warn('Sync with MongoDB Atlas skipped:', e);
+      return false;
+    }
   },
 
   getReviews: () => get(KEYS.REVIEWS),

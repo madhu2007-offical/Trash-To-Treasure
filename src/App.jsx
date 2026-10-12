@@ -160,6 +160,10 @@ function App() {
 
   useEffect(() => {
     loadState();
+    // Non-blocking sync with MongoDB Atlas when available
+    storage.syncWithServer().then(() => {
+      loadState();
+    }).catch(() => {});
   }, []);
 
   // Sync Cart badge and status helper
