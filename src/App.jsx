@@ -35,6 +35,7 @@ import t2tLogo from './assets/t2t-logo.jpg';
 import SplashScreen from './components/SplashScreen';
 import CameraModal from './components/CameraModal';
 import { compressImageFile } from './utils/imageUtils';
+import { sendLoginNotification } from './services/api';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=800&h=600&fit=crop&q=80';
 
@@ -189,6 +190,13 @@ function App() {
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
     loadState();
+    if (user?.email) {
+      sendLoginNotification({
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }).catch((err) => console.warn('Login notification email warning:', err));
+    }
     if (user.role === 'artisan') {
       setView({ name: 'artisan-dashboard', params: null });
     } else {

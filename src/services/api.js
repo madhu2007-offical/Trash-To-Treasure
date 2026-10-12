@@ -255,3 +255,24 @@ export async function verifyRemoteOtp({ email, code }) {
   }
   return null;
 }
+
+/**
+ * Send Login Notification Email
+ */
+export async function sendLoginNotification({ email, name, role }) {
+  try {
+    const res = await fetch(`${API_BASE}/send-login-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, role, loginTime: new Date().toLocaleString() }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('sendLoginNotification error (non-fatal):', err);
+  }
+  return null;
+}
+
